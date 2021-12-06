@@ -1,10 +1,28 @@
 # Two's Compliment
 **Binary Exploitation (pwn) - 250**
+Description:
+```
+Seven ate six
 
-## Discovery
+After seven ate six, it thought to itself, "After I ate nine my mouth felt numb, but this time it's even number".
+
+nc host1.metaproblems.com 5480
+```
+# Table of Contents
+1. [Discovery](#Discovery)
+2. [Plagiarism is always easier](#Plagiarism)
+3. [The road to even parity](#Road)
+4. [It's always /bin/sh](#binsh)
+5. [Back at cruising speed](#Cruising)
+6. [There's no such thing as free lunch](#Lunch)
+7. [Except 7's lunch](#Seven)
+8. [TL;DR](#tldr)
+
+## Discovery <a name="Discovery"></a>
 
 This challenge gave us a single binary. Let's run it and see what we get:
 ![image](./term1.png)
+
 *That's a little on the nose, isn't it?*
 
 I tried entering "A" and it returns with "Bad Character found". If I enter "B", it segfaults.
@@ -69,10 +87,10 @@ undefined8 check(void *arg1, uint32_t arg2)
 
 The only weird thing, if you've never seen this (and I've never seen this until now), is the `(*(code *)(_len + iVar2))();` line. This basically casts the location of our shell code `_len+iVar2` as a function pointer `(code*)` then calling it `();`. With better Ghidra notation this would look better, but I didn't see any reason to continue further.
 
-#### Making a test binary
+#### Making a test binary 
 Because the binary uses a specific address, I don't trust my own C skills, I copied the binary, opened it up in a hex editor, and turned the immediate `1` into a `0` on the and statement in `check()` so that any shellcode could run, as I can pretty easily tell if it has odd bytes or not. I know I have a working shellcode if, you know, I get a shell.
 
-## Plagiarism is always easier
+## Plagiarism is always easier <a name="Plagiarism"></a>
 Now, I had to consider a plan of attack. Clearly, no standard shellcode would just *work* on this binary. I looked up what I could about esoteric shellcodes, and given the hint in this challenge, **self-modifying shellcodes.** I found [This paper](https://www.exploit-db.com/docs/english/13127-writing-self-modifying-code-andutilizing-advanced-assembly-techniques.pdf) on writing self-modifying shellcode to restrict to the alphanumeric byteset. It brought the question of using someone else's shellcode and modifying it down, versus designing your own from the ground up. They went with the former, and so will I. However, I found [another page](https://systemoverlord.com/2016/04/27/even-shorter-shellcode.html) that had a 22 byte shellcode:
 ```asm
 xor esi, esi
@@ -122,7 +140,7 @@ syscall
 
 So with a bit more familiarity at hand, it's time to work at every odd byte in this shellcode.
 
-## The road to even pairty
+## The road to even parity <a name="Road"></a>
 
 My plan was to avoid self-modification for as long as possible, just because my skills at x86-64 were already weak and I'm not quite sure I was going to be able to do this challenge.
 
@@ -146,7 +164,7 @@ This compiles to `\x48[\xBB\x2F]\x62[\x69]\x6E[\x2F\x2F\x73]\x68[\x53]`. After m
 
 An easy fix I could see was actually an issue of using premade shellcode for different goals. The original shellcode was made under the rules of shellcode golf, one of those requirements being that there be no null bytes in the shellcode (so that string methods like `strlen()` read the entire input). However, this binary *runs* our shellcode for us. We can have nullbytes. The `/` character is `0x2f` and this code uses `'/bin//sh'` to make it fit in 8 bytes. So we modify it to `'/bin/sh\0'` and the input bytes would compile to `[\x2F]\x62[\x69]\x6E[\x2F\x73]\x68\x00` saving us a byte of work.
 
-## It's always /bin/sh
+## It's always /bin/sh <a name="binsh"></a>
 
 We're approaching the point where we're going to have to make some substantial live corrections if we want to shellcode to be accepted. I had to figure out someway to modify the bytes in `'/bin/sh'`. However, ~~most~~ all 64, 32 *and* 16 bit commands for `add`, `sub`, `inc`, `dec`, `xor`, `and`, `or` have an odd byte to signify the size. After a fair deal of testing I found out that the `inc` command for the last byte registers (i.e. `al`, `sil`, etc.), don't have that odd indicator byte. However, much to my dismay,  that means I would somehow need to construct the *entire* string with these last byte operations. I thought I could use the logical shift left bytes, and it would feed into the higher bits, but shifting on a 1 byte register keeps it local to that 1 byte. 
 
@@ -217,7 +235,7 @@ Which has no odd bytes! We've finally covered `/bin/sh`
 
 A lot of getting this to work was using `gdb` with `gef` enabled. It's easier to view the stack and see what instructions are getting run and what they do.
 
-## Back at cruising speed
+## Back at cruising speed <a name="Cruising"></a>
 
 There's a few more changes we can make to that original shellcode with relative ease.
 
@@ -245,7 +263,7 @@ We have that `pop rdi` thats responsible for `[\x53]`, and the `syscall` that co
 
 So we're back on the self modifying train. But memory is still memory. All we need is the address of where the shellcode is, and then we should know how long it is by the time we finish designing it, so it should be that hard to modify bytes. Good thing for us, it was stored using `mmap()` at address — *What?* Because my work is never over, its stored at address `0x133713370000`. Which means we need to write 4 more odd bytes into our shell code.
 
-## There's no such thing as free lunch
+## There's no such thing as free lunch <a name="Lunch"></a>
 
 So we need to write the address `0x133713370000` into a register and then access the memory inside of it. We'll do the same trick as we did for /bin/sh, and surely enough, it's not at all clean or elegant. Which again, is *fine*, we just need it to **work**:
 ```
@@ -286,7 +304,7 @@ This compiles to:
 ```
 Which gives us the end result of having our first point of interest stored in the register `rax`.
 
-Now, we can increment the memory at the address, (first, the `pop rdi` instruction), move it to somewhere else, and increment that memory too (the `syscall` instruction).
+Now, we can increment the memory at the address, (first, the `pop rdi` instruction), move the pointer to somewhere else, and increment that memory too (the `syscall` instruction).
 
 ```
 incb [rax] ;brackets dereference the pointer
@@ -296,7 +314,7 @@ inc al
 incb [rax]
 ```
 
-## Except 7's lunch
+## Except 7's lunch <a name="Seven"></a>
 
 Finally, we can put it all together:
 
@@ -406,7 +424,7 @@ We can see that our little modification changed the `pop rsi` to `pop rdi`
 
 Not too shabby for never coding in x64 before! It was a cute little chal, I'll give them that :)
 
-##If I had more time, I would've written a shorter shellcode (TL;DR)
+## If I had more time, I would've written a shorter shellcode (TL;DR) <a name="tldr"></a>
 
 The challenge binary runs the shellcode for us, but enforces that every byte is an even byte (0th bit is 0). I wrote new shell code based on an established shellcode to circumvent this restriction, eventually using shellcode self modification to get the syscall and other important instructions to be correct before running them. There exists a way to get the current address of the shellcode regardless of the binary, however, our shellcode was stored at a static location.
 
