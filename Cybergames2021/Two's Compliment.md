@@ -26,7 +26,9 @@ This challenge gave us a single binary. Let's run it and see what we get:
 
 *That's a little on the nose, isn't it?*
 
-I tried entering "A" and it returns with "Bad Character found". If I enter "B", it segfaults.
+Shellcode, is a string of bytes that encode assembly instructions to run `/bin/sh` or any other shell program, so that an attacker can get out of a program and instead have full navigation and control over the host computer.
+
+Moving onto enumerating input, I tried entering "A" and it returns with "Bad Character found". If I enter "B", it segfaults.
 Entering a string of As returns bad character, a string of Bs segfaults, Cs are bad characters, so on. At this point I put together that the program only accepts even bytes for input (as 'A' is `0x41`).
 
 I wanted to double check my thoughts, so I opened up the challenge file in cutter (a radare2 and ghidra based decompiler), and sure enough, it did just that.
@@ -155,19 +157,19 @@ xorb sil, 0x30
 ```
 This compiles to `\x6A\x30\x5E\x40\x80\xF6\x30`. All this does is write 0x30 to the stack (could be any even byte, but this paper was trying to use alphanumeric characters only). Puts it into `rsi`, then xors the single byte with `0x30` again, setting the whole register to `0`.
 
-Next, we have this move and push command:
+Next, we have this move and push instruction:
 ```asm
 mov rbx, 0x68732f2f6e69622f
 push rbx
 ```
 
-This compiles to `\x48[\xBB\x2F]\x62[\x69]\x6E[\x2F\x2F\x73]\x68[\x53]`. After messing around and seeing what bits affect the `mov` command, I realized that each of the registers have their own numeric ID, and that registers `rbx` and `rdx` and so on have odd IDs. So, I saw no harm, and simply modified the register to `rax` instead, as it made these calls have even bytes. That code compiled to `\x48\xB8[\x2F]\x62[\x69]\x6E[\x2F\x2F\x73]\x68\x50`. So an easy fix of 2 odd bytes.
+This compiles to `\x48[\xBB\x2F]\x62[\x69]\x6E[\x2F\x2F\x73]\x68[\x53]`. After messing around and seeing what bits affect the `mov` instruction, I realized that each of the registers have their own numeric ID, and that registers `rbx` and `rdx` and so on have odd IDs. So, I saw no harm, and simply modified the register to `rax` instead, as it made these calls have even bytes. That code compiled to `\x48\xB8[\x2F]\x62[\x69]\x6E[\x2F\x2F\x73]\x68\x50`. So an easy fix of 2 odd bytes.
 
 An easy fix I could see was actually an issue of using premade shellcode for different goals. The original shellcode was made under the rules of shellcode golf, one of those requirements being that there be no null bytes in the shellcode (so that string methods like `strlen()` read the entire input). However, this binary *runs* our shellcode for us. We can have nullbytes. The `/` character is `0x2f` and this code uses `'/bin//sh'` to make it fit in 8 bytes. So we modify it to `'/bin/sh\0'` and the input bytes would compile to `[\x2F]\x62[\x69]\x6E[\x2F\x73]\x68\x00` saving us a byte of work.
 
 ## It's always /bin/sh <a name="binsh"></a>
 
-We're approaching the point where we're going to have to make some substantial live corrections if we want to shellcode to be accepted. I had to figure out someway to modify the bytes in `'/bin/sh'`. However, ~~most~~ all 64, 32 *and* 16 bit commands for `add`, `sub`, `inc`, `dec`, `xor`, `and`, `or` have an odd byte to signify the size. After a fair deal of testing I found out that the `inc` command for the last byte registers (i.e. `al`, `sil`, etc.), don't have that odd indicator byte. However, much to my dismay,  that means I would somehow need to construct the *entire* string with these last byte operations. I thought I could use the logical shift left bytes, and it would feed into the higher bits, but shifting on a 1 byte register keeps it local to that 1 byte. 
+We're approaching the point where we're going to have to make some substantial live corrections if we want to shellcode to be accepted. I had to figure out someway to modify the bytes in `'/bin/sh'`. However, ~~most~~ all 64, 32 *and* 16 bit instructions for `add`, `sub`, `inc`, `dec`, `xor`, `and`, `or` have an odd byte to signify the size. After a fair deal of testing I found out that the `inc` instruction for the last byte registers (i.e. `al`, `sil`, etc.), don't have that odd indicator byte. However, much to my dismay,  that means I would somehow need to construct the *entire* string with these last byte operations. I thought I could use the logical shift left bytes, and it would feed into the higher bits, but shifting on a 1 byte register keeps it local to that 1 byte. 
 
 Luckily, we can push values on to the stack a couple bytes at a time (sadly, not 1 byte a time), and then pop the whole string into our register. So, we can load a couple bytes into the register, increment them from an even pairity to and odd parity, then push it onto the stack.
 
@@ -194,7 +196,7 @@ If we pop this word off the stack (a word is a 2 byte value), then our register 
 
 Annoyingly, this means that we have to do this *a lot* as our odd bytes are close together. Also, for my own sanity, I push just the to-be-odd byte and a null byte, so I can better keep track of what is the important data.
 
-So that very nice and clean `mov` and `push` command becomes this monster:
+So that very nice and clean `mov` and `push` instruction becomes this monster:
 
 ```asm
 mov ax, 0x0068
