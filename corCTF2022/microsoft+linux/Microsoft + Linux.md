@@ -1,5 +1,5 @@
 # Microsoft ❤ Linux
-**Reverse Engineering (rev) - Easy**
+**Reverse Engineering (rev) - 122pts**
 
 Description:
 ```
