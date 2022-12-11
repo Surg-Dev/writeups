@@ -1,6 +1,5 @@
 # Mitre CTF 2022
-Mitre ran a CTF from 12/10/2022 to 12/11/2022. It started at 1pm CST, and we finished as a team at 5pm CST the same day (Mainly myself (Sam), richyliu (Richard), and WhiteHoodHacker (Minh)). There were a total of 18 challenges across 4 categories. Here are some select writeups.
-D
+Mitre ran a CTF from 12/10/2022 to 12/11/2022. It started at 1pm CST, and we finished as a team at 5pm CST the same day (Mainly myself (Sam), richyliu (Richard), and WhiteHoodHacker (Minh)). There were a total of 18 challenges across 4 categories. Here are most of the writeups.
 ## crypto 50
 ```
 What could this mean?
